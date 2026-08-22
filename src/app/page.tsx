@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Circle,
   Clock3,
+  Eye,
   FileCheck2,
   FileText,
   FileUp,
@@ -82,6 +83,14 @@ type WordPressConnection = {
   applicationPassword: string;
 };
 
+type PagePreview = {
+  open: boolean;
+  loading: boolean;
+  title: string;
+  html: string;
+  error?: string;
+};
+
 type DraftInput = {
   website: string;
   practiceArea: string;
@@ -128,6 +137,13 @@ const emptyWordPressConnection: WordPressConnection = {
   siteUrl: "",
   username: "",
   applicationPassword: "",
+};
+
+const emptyPagePreview: PagePreview = {
+  open: false,
+  loading: false,
+  title: "Page preview",
+  html: "",
 };
 
 function parseBulkUrls(content: string) {
@@ -209,6 +225,29 @@ function wordPressSiteUrl(record: PageRecord) {
   } catch {
     return record.pageUrl || record.website;
   }
+}
+
+function previewDocument(title: string, html: string) {
+  const safeTitle = title
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${safeTitle}</title>
+  <style>
+    :root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#fff;color:#192a28;font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:1.7}
+    main{width:min(900px,calc(100% - 40px));margin:0 auto;padding:70px 0 110px}h1,h2,h3,h4,h5,h6{color:#17312d;font-family:Georgia,'Times New Roman',serif;line-height:1.12;letter-spacing:-.025em}
+    h1{margin:0 0 34px;font-size:clamp(42px,7vw,72px)}h2{margin:54px 0 18px;font-size:clamp(30px,4.5vw,45px)}h3{margin:38px 0 14px;font-size:28px}p{margin:0 0 22px}ul,ol{margin:0 0 28px;padding-left:30px}li{margin:7px 0}a{color:#205d4f;text-decoration-thickness:1px;text-underline-offset:3px}blockquote{margin:34px 0;padding:4px 0 4px 24px;border-left:4px solid #d5f443;color:#465955}table{width:100%;border-collapse:collapse;margin:30px 0}th,td{padding:12px;border:1px solid #dfe4df;text-align:left}hr{border:0;border-top:1px solid #dfe4df;margin:42px 0}
+    @media(max-width:600px){body{font-size:16px}main{width:min(100% - 28px,900px);padding-top:38px}h1{font-size:38px}}
+  </style>
+</head>
+<body><main>${html}</main></body>
+</html>`;
 }
 
 function enhancementTitle(record: PageRecord) {
@@ -314,6 +353,7 @@ export default function Home() {
   const [wordpressConnectionMessage, setWordpressConnectionMessage] = useState<string | null>(
     null,
   );
+  const [pagePreview, setPagePreview] = useState<PagePreview>(emptyPagePreview);
 
   const shareRecordWithReviewers = useCallback(
     async (record: PageRecord, approvalTriggered = false) => {
@@ -496,6 +536,20 @@ export default function Home() {
   useEffect(() => {
     if (hydrated) localStorage.setItem(ENHANCE_FORM_KEY, JSON.stringify(enhanceForm));
   }, [enhanceForm, hydrated]);
+
+  useEffect(() => {
+    if (!pagePreview.open) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPagePreview(emptyPagePreview);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [pagePreview.open]);
 
   useEffect(() => {
     if (!hydrated || memoryInitialized.current || !records.length) return;
@@ -934,6 +988,51 @@ export default function Home() {
     sharingReviewerJobs.current.delete(record.id);
     setRecords((current) => current.filter((item) => item.id !== record.id));
     setNotice("The page was removed from the dashboard.");
+  }
+
+  async function openPagePreview(record: PageRecord) {
+    const docId = googleDocId(record);
+    if (!docId) {
+      setNotice("The Google Doc is missing, so this page cannot be previewed yet.");
+      return;
+    }
+
+    const fallbackTitle = isEnhancement(record)
+      ? enhancementTitle(record)
+      : `${formatLocation(record.city, record.state)} ${record.practiceArea}`.trim();
+    setPagePreview({
+      open: true,
+      loading: true,
+      title: fallbackTitle || "Page preview",
+      html: "",
+    });
+
+    try {
+      const query = new URLSearchParams({ docId, fallbackTitle });
+      const response = await fetch(`/api/google/preview?${query}`, { cache: "no-store" });
+      const data = await readApiResponse(response);
+      if (typeof data.html !== "string" || typeof data.title !== "string") {
+        throw new Error("Google did not return a usable page preview.");
+      }
+      setPagePreview({
+        open: true,
+        loading: false,
+        title: data.title,
+        html: data.html,
+      });
+    } catch (error) {
+      setPagePreview({
+        open: true,
+        loading: false,
+        title: fallbackTitle || "Page preview",
+        html: "",
+        error: error instanceof Error ? error.message : "The page preview could not be loaded.",
+      });
+    }
+  }
+
+  function closePagePreview() {
+    setPagePreview(emptyPagePreview);
   }
 
   async function publishToWordPress(record: PageRecord) {
@@ -1580,6 +1679,39 @@ export default function Home() {
           </div>
         )}
 
+        {pagePreview.open && (
+          <div className="page-preview-overlay" role="dialog" aria-modal="true" aria-label="Full page preview">
+            <header>
+              <div>
+                <strong>{pagePreview.title}</strong>
+                <span>Full content preview · WordPress theme is not applied</span>
+              </div>
+              <button className="secondary-button compact" type="button" onClick={closePagePreview}>
+                Close <X size={16} />
+              </button>
+            </header>
+            <div className="page-preview-body">
+              {pagePreview.loading ? (
+                <div className="preview-loading">
+                  <LoaderCircle className="spin" size={26} />
+                  <strong>Preparing the latest Google Doc…</strong>
+                </div>
+              ) : pagePreview.error ? (
+                <div className="preview-loading preview-error">
+                  <X size={25} />
+                  <strong>{pagePreview.error}</strong>
+                </div>
+              ) : (
+                <iframe
+                  title={`Full preview of ${pagePreview.title}`}
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
+                  srcDoc={previewDocument(pagePreview.title, pagePreview.html)}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
         {showForm && (
           <div id="page-workflow">
             <div className="workflow-switch" role="tablist" aria-label="Choose a page workflow">
@@ -1907,7 +2039,14 @@ export default function Home() {
                   ) : (
                     <div className="record-actions">
                       {isEnhancement(record) && <a className="source-link" href={record.pageUrl || record.website} target="_blank" rel="noreferrer">Original page <ArrowUpRight size={14} /></a>}
-                      {record.docUrl && <a className="doc-link" href={record.docUrl} target="_blank" rel="noreferrer">Open Google Doc <ArrowUpRight size={15} /></a>}
+                      {record.docUrl && (
+                        <>
+                          <a className="doc-link" href={record.docUrl} target="_blank" rel="noreferrer">Open Google Doc <ArrowUpRight size={15} /></a>
+                          <button className="source-link preview-link" type="button" onClick={() => void openPagePreview(record)}>
+                            <Eye size={14} /> Full preview
+                          </button>
+                        </>
+                      )}
                       <label className={`check-item ${record.docUrl ? "checked" : ""}`}><span>{record.docUrl ? <Check size={14} /> : <Circle size={14} />}</span>Shared with Aron</label>
                       {record.approvalEnabled ? (
                         <label className={`check-item ${record.approvalStatus === "APPROVED" || record.willShared ? "checked" : ""}`}>
