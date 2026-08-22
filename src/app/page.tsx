@@ -1021,9 +1021,12 @@ export default function Home() {
     }
 
     const fallbackTitle = `${formatLocation(record.city, record.state)} ${record.practiceArea}`.trim();
+    const updatingExistingDraft = Boolean(record.wordpressDraftCreatedAt && record.wordpressPageId);
     if (options.confirm !== false) {
       const confirmed = window.confirm(
-        `Create “${fallbackTitle}” as a WordPress draft? It will not be published automatically.`,
+        updatingExistingDraft
+          ? `Update “${fallbackTitle}” in WordPress from the approved Google Doc? It will remain a draft.`
+          : `Create “${fallbackTitle}” as a WordPress draft? It will not be published automatically.`,
       );
       if (!confirmed) return false;
     }
@@ -1039,6 +1042,7 @@ export default function Home() {
           website: record.website,
           fallbackTitle,
           connection,
+          existingPageId: updatingExistingDraft ? record.wordpressPageId : undefined,
         }),
       });
       const data = await readApiResponse(response);
@@ -1056,7 +1060,13 @@ export default function Home() {
         status: "ready",
         error: undefined,
       });
-      if (!options.quiet) setNotice("The approved page was created in WordPress as a draft.");
+      if (!options.quiet) {
+        setNotice(
+          updatingExistingDraft
+            ? "The WordPress draft was updated from the approved Google Doc."
+            : "The approved page was created in WordPress as a draft.",
+        );
+      }
       return true;
     } catch (error) {
       if (!options.quiet) {
@@ -1949,15 +1959,32 @@ export default function Home() {
                         )
                       ) : (
                         record.wordpressDraftCreatedAt ? (
-                          <a
-                            className="check-item checked wordpress-published"
-                            href={record.wordpressEditUrl || record.wordpressUrl || record.website}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            <span><Check size={14} /></span>
-                            WordPress draft <ArrowUpRight size={13} />
-                          </a>
+                          <>
+                            <a
+                              className="check-item checked wordpress-published"
+                              href={record.wordpressEditUrl || record.wordpressUrl || record.website}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <span><Check size={14} /></span>
+                              Open WordPress draft <ArrowUpRight size={13} />
+                            </a>
+                            <button
+                              className="secondary-button compact wordpress-publish"
+                              onClick={() => void createWordPressDraft(record)}
+                              disabled={publishingToWordPress === record.id}
+                              title="Update this existing draft from the approved Google Doc"
+                            >
+                              {publishingToWordPress === record.id ? (
+                                <LoaderCircle className="spin" size={15} />
+                              ) : (
+                                <FileUp size={15} />
+                              )}
+                              {publishingToWordPress === record.id
+                                ? "Updating draft…"
+                                : "Update WordPress draft"}
+                            </button>
+                          </>
                         ) : record.willShared ? (
                           <button
                             className="secondary-button compact wordpress-publish"

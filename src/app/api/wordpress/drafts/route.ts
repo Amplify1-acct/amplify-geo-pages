@@ -12,6 +12,7 @@ type DraftInput = {
   website?: string;
   fallbackTitle?: string;
   connection?: WordPressConnectionInput;
+  existingPageId?: number;
 };
 
 type WordPressPage = {
@@ -81,6 +82,30 @@ function slugify(value: string) {
     .slice(0, 180);
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function readWordPressJson<T>(response: Response, unexpectedMessage: string) {
+  if (response.headers.get("cf-mitigated") === "challenge") {
+    throw new Error(
+      "Cloudflare challenged the WordPress REST API. Exempt /wp-json/ from the bot challenge before creating drafts.",
+    );
+  }
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(unexpectedMessage);
+  }
+}
+
 async function exportApprovedGoogleDoc(accessToken: string, docId: string) {
   const metadataResponse = await fetch(
     `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(docId)}?fields=id,mimeType,trashed,appProperties&supportsAllDrives=true`,
@@ -130,6 +155,12 @@ export async function POST(request: NextRequest) {
     const docId = input.docId?.trim() || "";
     const website = input.website?.trim() || "";
     const fallbackTitle = input.fallbackTitle?.trim() || "New GEO page";
+    const existingPageId =
+      typeof input.existingPageId === "number" &&
+      Number.isInteger(input.existingPageId) &&
+      input.existingPageId > 0
+        ? input.existingPageId
+        : null;
 
     if (!/^[A-Za-z0-9_-]{10,200}$/.test(docId)) {
       return NextResponse.json({ error: "The approved Google Doc is missing." }, { status: 400 });
@@ -167,12 +198,50 @@ export async function POST(request: NextRequest) {
     const headingMatch = exportedContent.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
     const title = plainText(headingMatch?.[1] || "") || fallbackTitle;
     const slug = slugify(title);
-    const content = headingMatch ? exportedContent.replace(headingMatch[0], "").trim() : exportedContent;
+    const content = headingMatch
+      ? exportedContent
+      : `<h1>${escapeHtml(title)}</h1>\n${exportedContent}`;
     if (!slug) {
       return NextResponse.json({ error: "The approved page needs a usable title." }, { status: 400 });
     }
 
     const requestHeaders = wordPressRequestHeaders(config);
+    let existingPage: WordPressPage | null = null;
+    if (existingPageId) {
+      const existingResponse = await fetch(
+        `${config.siteUrl}/wp-json/wp/v2/pages/${existingPageId}?context=edit&_fields=id,link,slug,status,title`,
+        {
+          headers: requestHeaders,
+          redirect: "follow",
+          cache: "no-store",
+        },
+      );
+      const existingData = await readWordPressJson<WordPressPage & { message?: string }>(
+        existingResponse,
+        "WordPress returned an unexpected response while opening the existing draft.",
+      );
+      if (!existingResponse.ok || !existingData.id) {
+        throw new Error(existingData.message || "The existing WordPress draft could not be opened.");
+      }
+      if (existingData.status !== "draft" && existingData.status !== "pending") {
+        return NextResponse.json(
+          { error: "Only an existing draft or pending page can be updated through this action." },
+          { status: 409 },
+        );
+      }
+      if (
+        existingData.link &&
+        normalizedHost(new URL(existingData.link).hostname) !==
+          normalizedHost(configuredUrl.hostname)
+      ) {
+        return NextResponse.json(
+          { error: "The existing draft does not belong to the connected WordPress site." },
+          { status: 409 },
+        );
+      }
+      existingPage = existingData;
+    }
+
     const duplicateQuery = new URLSearchParams({
       slug,
       context: "edit",
@@ -188,30 +257,26 @@ export async function POST(request: NextRequest) {
         cache: "no-store",
       },
     );
-    if (duplicateResponse.headers.get("cf-mitigated") === "challenge") {
-      throw new Error(
-        "Cloudflare challenged the WordPress REST API. Exempt /wp-json/ from the bot challenge before creating drafts.",
-      );
-    }
-    const duplicateText = await duplicateResponse.text();
-    let duplicateData: WordPressPage[] | { message?: string };
-    try {
-      duplicateData = JSON.parse(duplicateText) as WordPressPage[] | { message?: string };
-    } catch {
-      throw new Error("WordPress returned an unexpected response instead of its Pages API.");
-    }
+    const duplicateData = await readWordPressJson<WordPressPage[] | { message?: string }>(
+      duplicateResponse,
+      "WordPress returned an unexpected response instead of its Pages API.",
+    );
     if (!duplicateResponse.ok || !Array.isArray(duplicateData)) {
       const message = Array.isArray(duplicateData) ? undefined : duplicateData.message;
       throw new Error(message || "WordPress could not check for matching pages.");
     }
-    if (duplicateData.length) {
+    const conflictingPage = duplicateData.find((page) => page.id !== existingPage?.id);
+    if (conflictingPage || (!existingPage && duplicateData.length)) {
       return NextResponse.json(
         { error: `A WordPress page with the slug “${slug}” already exists. Open it through Enhance existing instead.` },
         { status: 409 },
       );
     }
 
-    const createResponse = await fetch(`${config.siteUrl}/wp-json/wp/v2/pages`, {
+    const endpoint = existingPage
+      ? `${config.siteUrl}/wp-json/wp/v2/pages/${existingPage.id}`
+      : `${config.siteUrl}/wp-json/wp/v2/pages`;
+    const createResponse = await fetch(endpoint, {
       method: "POST",
       headers: {
         ...requestHeaders,
@@ -221,18 +286,10 @@ export async function POST(request: NextRequest) {
       redirect: "follow",
       cache: "no-store",
     });
-    if (createResponse.headers.get("cf-mitigated") === "challenge") {
-      throw new Error(
-        "Cloudflare challenged the WordPress REST API. Exempt /wp-json/ from the bot challenge before creating drafts.",
-      );
-    }
-    const createText = await createResponse.text();
-    let created: WordPressPage & { message?: string };
-    try {
-      created = JSON.parse(createText) as WordPressPage & { message?: string };
-    } catch {
-      throw new Error("WordPress returned an unexpected response while creating the draft.");
-    }
+    const created = await readWordPressJson<WordPressPage & { message?: string }>(
+      createResponse,
+      `WordPress returned an unexpected response while ${existingPage ? "updating" : "creating"} the draft.`,
+    );
     if (!createResponse.ok || !created.id) {
       throw new Error(created.message || "WordPress did not accept the approved draft.");
     }
@@ -243,6 +300,7 @@ export async function POST(request: NextRequest) {
       title,
       slug: created.slug || slug,
       status: "draft",
+      updated: Boolean(existingPage),
       previewUrl: created.link || null,
       editUrl: new URL(`/wp-admin/post.php?post=${created.id}&action=edit`, config.siteUrl).toString(),
       createdAt: new Date().toISOString(),
