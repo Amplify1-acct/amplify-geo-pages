@@ -1593,7 +1593,6 @@ export default function Home() {
                   onClick={() => void createApprovedWordPressDrafts()}
                   disabled={
                     wordpress.loading ||
-                    !wordpress.connected ||
                     creatingWordPressBatch ||
                     Boolean(publishingToWordPress)
                   }
@@ -1690,7 +1689,6 @@ export default function Home() {
                             onClick={() => void publishToWordPress(record)}
                             disabled={
                               wordpress.loading ||
-                              !wordpress.connected ||
                               publishingToWordPress === record.id
                             }
                             title={
@@ -1730,7 +1728,6 @@ export default function Home() {
                             onClick={() => void createWordPressDraft(record)}
                             disabled={
                               wordpress.loading ||
-                              !wordpress.connected ||
                               creatingWordPressBatch ||
                               publishingToWordPress === record.id
                             }

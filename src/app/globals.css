@@ -93,8 +93,10 @@ h1, h2, h3, p { margin-top: 0; }
 .icon-button.danger:hover { color: var(--red); background: #faefed; }
 
 .notice {
-  display: flex; align-items: center; gap: 9px; margin: -14px 0 22px; padding: 12px 15px;
-  background: #eef6e8; border: 1px solid #d7e7cf; border-radius: 11px; color: #375c43; font-size: 13px;
+  position: fixed; top: 82px; right: 22px; z-index: 1000; width: min(520px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 9px; margin: 0; padding: 13px 15px;
+  background: #eef6e8; border: 1px solid #c8ddbe; border-radius: 11px; color: #375c43; font-size: 13px;
+  box-shadow: 0 14px 38px rgba(23, 49, 45, 0.18);
 }
 .notice span { flex: 1; }
 .notice button { display: grid; place-items: center; background: transparent; border: 0; cursor: pointer; color: inherit; }
