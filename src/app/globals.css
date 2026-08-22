@@ -54,6 +54,8 @@ a { color: inherit; text-decoration: none; }
   background: var(--white); border: 1px solid var(--line); border-radius: 999px;
   color: var(--muted); font-size: 12px; max-width: 230px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.connection-button { cursor: pointer; }
+.connection-button:hover { border-color: #b9c6bf; color: var(--forest); }
 .connection-dot { width: 7px; height: 7px; border-radius: 50%; background: #aab2ae; flex: none; }
 .connection-pill.is-connected .connection-dot { background: #52a36f; box-shadow: 0 0 0 3px #e6f4e9; }
 
@@ -100,6 +102,35 @@ h1, h2, h3, p { margin-top: 0; }
 }
 .notice span { flex: 1; }
 .notice button { display: grid; place-items: center; background: transparent; border: 0; cursor: pointer; color: inherit; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 24px;
+  background: rgba(13, 34, 30, 0.46); backdrop-filter: blur(5px);
+}
+.wordpress-connect-modal {
+  width: min(520px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; padding: 25px;
+  display: flex; flex-direction: column; gap: 15px; border-radius: 17px; background: var(--white);
+  border: 1px solid rgba(255, 255, 255, 0.6); box-shadow: 0 24px 80px rgba(11, 34, 29, 0.28);
+}
+.modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.modal-heading .eyebrow { margin-bottom: 7px; font-size: 10px; }
+.modal-heading h2 { margin: 0 0 6px; font-family: var(--font-display); font-size: 26px; }
+.modal-heading p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.wordpress-connect-modal > label { display: flex; flex-direction: column; gap: 7px; font-size: 11px; font-weight: 750; }
+.wordpress-connect-modal > label input {
+  width: 100%; height: 44px; padding: 0 12px; border: 1px solid #d7ddd8; border-radius: 9px;
+  outline: none; background: #fbfcfa; font-size: 13px; font-weight: 500;
+}
+.wordpress-connect-modal > label input:focus { border-color: #6d8e84; box-shadow: 0 0 0 3px rgba(71, 111, 99, 0.1); background: var(--white); }
+.connection-target { padding: 10px 12px; border-radius: 9px; background: #f1f5ed; color: #64736e; font-size: 11px; }
+.connection-target strong { color: var(--forest); }
+.connection-privacy { margin: -2px 0 0; color: #7b8984; font-size: 10px; }
+.connection-error { padding: 11px 12px; border: 1px solid #e8c4bd; border-radius: 9px; background: #fff4f2; color: #9a473d; font-size: 11px; line-height: 1.45; }
+.connected-sites { display: flex; flex-direction: column; gap: 7px; padding-top: 3px; }
+.connected-sites > span { color: #7b8984; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.connected-sites > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 8px; background: #f5f7f3; font-size: 11px; }
+.connected-sites button { border: 0; background: transparent; color: var(--red); cursor: pointer; font-size: 10px; font-weight: 750; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 4px; }
 
 #page-workflow { scroll-margin-top: 92px; }
 .workflow-switch {
@@ -311,4 +342,6 @@ footer button { display: inline-flex; align-items: center; gap: 5px; background:
   .record-actions { align-items: flex-start; flex-direction: column; gap: 10px; padding-left: 49px; }
   .record-delete { margin-left: 0; }
   .doc-link { margin-bottom: 3px; }
+  .modal-backdrop { padding: 12px; }
+  .wordpress-connect-modal { max-height: calc(100vh - 24px); padding: 20px 17px; }
 }

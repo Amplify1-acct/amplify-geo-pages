@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import sanitizeHtml from "sanitize-html";
 import { getGoogleAccessToken, getGoogleEmail } from "@/lib/google";
 import { getWordPressConfig, wordPressRequestHeaders } from "@/lib/wordpress";
+import type { WordPressConnectionInput } from "@/lib/wordpress";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,6 +11,7 @@ type DraftInput = {
   docId?: string;
   website?: string;
   fallbackTitle?: string;
+  connection?: WordPressConnectionInput;
 };
 
 type WordPressPage = {
@@ -152,7 +154,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const config = getWordPressConfig();
+    const config = getWordPressConfig(input.connection);
     const configuredUrl = new URL(config.siteUrl);
     if (normalizedHost(websiteUrl.hostname) !== normalizedHost(configuredUrl.hostname)) {
       return NextResponse.json(

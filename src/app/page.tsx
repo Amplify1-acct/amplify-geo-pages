@@ -76,12 +76,10 @@ type GoogleStatus = {
   email?: string | null;
 };
 
-type WordPressStatus = {
-  loading: boolean;
-  configured: boolean;
-  connected?: boolean;
-  siteUrl?: string | null;
-  message?: string;
+type WordPressConnection = {
+  siteUrl: string;
+  username: string;
+  applicationPassword: string;
 };
 
 type DraftInput = {
@@ -124,6 +122,12 @@ const emptyBulkImport: BulkImport = {
   fileName: "",
   urls: [],
   totalFound: 0,
+};
+
+const emptyWordPressConnection: WordPressConnection = {
+  siteUrl: "",
+  username: "",
+  applicationPassword: "",
 };
 
 function parseBulkUrls(content: string) {
@@ -186,6 +190,22 @@ function isInitialResetTarget(record: PageRecord) {
 function recordHost(record: PageRecord) {
   try {
     return new URL(record.pageUrl || record.website).hostname.replace(/^www\./, "");
+  } catch {
+    return record.pageUrl || record.website;
+  }
+}
+
+function wordPressSiteKey(value: string) {
+  try {
+    return new URL(value).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function wordPressSiteUrl(record: PageRecord) {
+  try {
+    return new URL(record.pageUrl || record.website).origin;
   } catch {
     return record.pageUrl || record.website;
   }
@@ -280,10 +300,20 @@ export default function Home() {
     openaiConfigured: false,
     connected: false,
   });
-  const [wordpress, setWordpress] = useState<WordPressStatus>({
-    loading: true,
-    configured: false,
-  });
+  const [wordpressConnections, setWordpressConnections] = useState<
+    Record<string, WordPressConnection>
+  >({});
+  const [wordpressConnectOpen, setWordpressConnectOpen] = useState(false);
+  const [wordpressConnectTarget, setWordpressConnectTarget] = useState<string | null>(null);
+  const [wordpressConnectionForm, setWordpressConnectionForm] = useState<WordPressConnection>(
+    emptyWordPressConnection,
+  );
+  const [wordpressConnectionStatus, setWordpressConnectionStatus] = useState<
+    "idle" | "testing" | "error"
+  >("idle");
+  const [wordpressConnectionMessage, setWordpressConnectionMessage] = useState<string | null>(
+    null,
+  );
 
   const shareRecordWithReviewers = useCallback(
     async (record: PageRecord, approvalTriggered = false) => {
@@ -694,13 +724,6 @@ export default function Home() {
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
-  useEffect(() => {
-    fetch("/api/wordpress/status", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((data) => setWordpress({ loading: false, ...data }))
-      .catch(() => setWordpress({ loading: false, configured: false }));
-  }, []);
-
   const metrics = useMemo(
     () => ({
       total: records.length,
@@ -753,6 +776,82 @@ export default function Home() {
       ),
     [records],
   );
+
+  function wordPressConnectionFor(record: PageRecord) {
+    return wordpressConnections[wordPressSiteKey(record.pageUrl || record.website)];
+  }
+
+  function openWordPressConnection(record?: PageRecord) {
+    const siteUrl = record ? wordPressSiteUrl(record) : "";
+    const existing = siteUrl ? wordpressConnections[wordPressSiteKey(siteUrl)] : undefined;
+    setWordpressConnectTarget(record?.id || null);
+    setWordpressConnectionForm(
+      existing
+        ? { ...existing }
+        : { ...emptyWordPressConnection, siteUrl },
+    );
+    setWordpressConnectionStatus("idle");
+    setWordpressConnectionMessage(null);
+    setWordpressConnectOpen(true);
+  }
+
+  function closeWordPressConnection() {
+    if (wordpressConnectionStatus === "testing") return;
+    setWordpressConnectOpen(false);
+    setWordpressConnectTarget(null);
+    setWordpressConnectionForm(emptyWordPressConnection);
+    setWordpressConnectionStatus("idle");
+    setWordpressConnectionMessage(null);
+  }
+
+  async function connectWordPress(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWordpressConnectionStatus("testing");
+    setWordpressConnectionMessage(null);
+
+    try {
+      const response = await fetch("/api/wordpress/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(wordpressConnectionForm),
+      });
+      const data = await readApiResponse(response);
+      if (data.connected !== true || typeof data.siteUrl !== "string") {
+        throw new Error("WordPress did not confirm the connection.");
+      }
+
+      const key = wordPressSiteKey(data.siteUrl);
+      if (!key) throw new Error("WordPress returned an invalid site address.");
+      setWordpressConnections((current) => ({
+        ...current,
+        [key]: {
+          ...wordpressConnectionForm,
+          siteUrl: data.siteUrl as string,
+        },
+      }));
+      setWordpressConnectOpen(false);
+      setWordpressConnectTarget(null);
+      setWordpressConnectionForm(emptyWordPressConnection);
+      setWordpressConnectionStatus("idle");
+      setNotice(
+        `${key} is connected for this browser session. Click the WordPress draft button again to upload the approved page.`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "The WordPress connection could not be tested.";
+      setWordpressConnectionStatus("error");
+      setWordpressConnectionMessage(message);
+    }
+  }
+
+  function disconnectWordPress(key: string) {
+    setWordpressConnections((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setNotice(`${key} was disconnected from this browser session.`);
+  }
 
   function updateForm<K extends keyof DraftInput>(key: K, value: DraftInput[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -846,11 +945,10 @@ export default function Home() {
       setNotice("Complete Aron’s review before publishing this page to WordPress.");
       return;
     }
-    if (!wordpress.connected) {
-      setNotice(
-        wordpress.message ||
-          "WordPress needs to be connected in Vercel before this button can publish.",
-      );
+    const connection = wordPressConnectionFor(record);
+    if (!connection) {
+      openWordPressConnection(record);
+      setNotice(`Connect ${recordHost(record)} before publishing this approved page.`);
       return;
     }
 
@@ -869,6 +967,7 @@ export default function Home() {
         body: JSON.stringify({
           docId: googleDocId(record),
           pageUrl,
+          connection,
         }),
       });
       const data = await readApiResponse(response);
@@ -912,12 +1011,11 @@ export default function Home() {
       if (!options.quiet) setNotice("Complete Aron’s review before creating a WordPress draft.");
       return false;
     }
-    if (!wordpress.connected) {
+    const connection = wordPressConnectionFor(record);
+    if (!connection) {
       if (!options.quiet) {
-        setNotice(
-          wordpress.message ||
-            "WordPress needs to be connected in Vercel before drafts can be created.",
-        );
+        openWordPressConnection(record);
+        setNotice(`Connect ${recordHost(record)} before creating this WordPress draft.`);
       }
       return false;
     }
@@ -940,6 +1038,7 @@ export default function Home() {
           docId,
           website: record.website,
           fallbackTitle,
+          connection,
         }),
       });
       const data = await readApiResponse(response);
@@ -973,9 +1072,13 @@ export default function Home() {
 
   async function createApprovedWordPressDrafts() {
     if (!approvedDraftRecords.length || creatingWordPressBatch) return;
-    if (!wordpress.connected) {
+    const missingConnection = approvedDraftRecords.find(
+      (record) => !wordPressConnectionFor(record),
+    );
+    if (missingConnection) {
+      openWordPressConnection(missingConnection);
       setNotice(
-        wordpress.message || "WordPress needs to be connected in Vercel before drafts can be created.",
+        `Connect ${recordHost(missingConnection)} first. The batch will use the matching connection for every site.`,
       );
       return;
     }
@@ -1275,17 +1378,17 @@ export default function Home() {
           <span className="brand-product">Geo Pages</span>
         </a>
         <div className="topbar-actions">
-          <span
-            className={`connection-pill ${wordpress.connected ? "is-connected" : ""}`}
-            title={wordpress.message || undefined}
+          <button
+            className={`connection-pill connection-button ${Object.keys(wordpressConnections).length ? "is-connected" : ""}`}
+            onClick={() => openWordPressConnection()}
+            title="Connect another WordPress site for this browser session"
+            type="button"
           >
             <span className="connection-dot" />
-            {wordpress.loading
-              ? "Checking WordPress"
-              : wordpress.connected
-                ? `WordPress · ${wordpress.siteUrl ? new URL(wordpress.siteUrl).hostname.replace(/^www\./, "") : "connected"}`
-                : "WordPress not connected"}
-          </span>
+            {Object.keys(wordpressConnections).length
+              ? `WordPress · ${Object.keys(wordpressConnections).length} site${Object.keys(wordpressConnections).length === 1 ? "" : "s"}`
+              : "Connect WordPress"}
+          </button>
           <span className={`connection-pill ${google.connected ? "is-connected" : ""}`}>
             <span className="connection-dot" />
             {google.loading
@@ -1331,6 +1434,139 @@ export default function Home() {
             <CheckCircle2 size={17} />
             <span>{notice}</span>
             <button onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={16} /></button>
+          </div>
+        )}
+
+        {wordpressConnectOpen && (
+          <div
+            className="modal-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) closeWordPressConnection();
+            }}
+          >
+            <form className="wordpress-connect-modal" onSubmit={connectWordPress}>
+              <div className="modal-heading">
+                <div>
+                  <p className="eyebrow"><Globe2 size={14} /> WordPress connection</p>
+                  <h2>Connect this site</h2>
+                  <p>
+                    Credentials stay in this browser tab and are matched to the page’s domain.
+                  </p>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={closeWordPressConnection}
+                  aria-label="Close WordPress connection"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {wordpressConnectTarget && (
+                <div className="connection-target">
+                  Upload target: <strong>{wordPressSiteKey(wordpressConnectionForm.siteUrl)}</strong>
+                </div>
+              )}
+
+              <label>
+                WordPress site URL
+                <input
+                  type="url"
+                  required
+                  placeholder="https://lawfirm.com"
+                  value={wordpressConnectionForm.siteUrl}
+                  onChange={(event) =>
+                    setWordpressConnectionForm((current) => ({
+                      ...current,
+                      siteUrl: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                WordPress username
+                <input
+                  type="text"
+                  required
+                  autoComplete="username"
+                  placeholder="editor@lawfirm.com"
+                  value={wordpressConnectionForm.username}
+                  onChange={(event) =>
+                    setWordpressConnectionForm((current) => ({
+                      ...current,
+                      username: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Application Password
+                <input
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  placeholder="xxxx xxxx xxxx xxxx xxxx xxxx"
+                  value={wordpressConnectionForm.applicationPassword}
+                  onChange={(event) =>
+                    setWordpressConnectionForm((current) => ({
+                      ...current,
+                      applicationPassword: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <p className="connection-privacy">
+                Encrypted in transit · never saved to the tracker or Vercel
+              </p>
+
+              {wordpressConnectionMessage && (
+                <div className="connection-error" role="alert">
+                  {wordpressConnectionMessage}
+                </div>
+              )}
+
+              {Object.keys(wordpressConnections).length > 0 && (
+                <div className="connected-sites">
+                  <span>Connected this session</span>
+                  {Object.keys(wordpressConnections).map((key) => (
+                    <div key={key}>
+                      <strong>{key}</strong>
+                      <button type="button" onClick={() => disconnectWordPress(key)}>
+                        Disconnect
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="modal-actions">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={closeWordPressConnection}
+                  disabled={wordpressConnectionStatus === "testing"}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={wordpressConnectionStatus === "testing"}
+                >
+                  {wordpressConnectionStatus === "testing" ? (
+                    <LoaderCircle className="spin" size={16} />
+                  ) : (
+                    <Globe2 size={16} />
+                  )}
+                  {wordpressConnectionStatus === "testing"
+                    ? "Testing connection…"
+                    : "Connect WordPress"}
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
@@ -1592,11 +1828,14 @@ export default function Home() {
                   className="secondary-button compact wordpress-publish"
                   onClick={() => void createApprovedWordPressDrafts()}
                   disabled={
-                    wordpress.loading ||
                     creatingWordPressBatch ||
                     Boolean(publishingToWordPress)
                   }
-                  title={wordpress.connected ? "Create drafts for all approved new pages" : wordpress.message}
+                  title={
+                    approvedDraftRecords.every((record) => wordPressConnectionFor(record))
+                      ? "Create drafts for all approved new pages"
+                      : "Connect each page’s WordPress site to run the batch"
+                  }
                 >
                   {creatingWordPressBatch ? <LoaderCircle className="spin" size={15} /> : <FileUp size={15} />}
                   {creatingWordPressBatch
@@ -1687,14 +1926,11 @@ export default function Home() {
                           <button
                             className="secondary-button compact wordpress-publish"
                             onClick={() => void publishToWordPress(record)}
-                            disabled={
-                              wordpress.loading ||
-                              publishingToWordPress === record.id
-                            }
+                            disabled={publishingToWordPress === record.id}
                             title={
-                              wordpress.connected
+                              wordPressConnectionFor(record)
                                 ? "Publish the approved Google Doc to the existing WordPress page"
-                                : wordpress.message || "Connect WordPress in Vercel to enable publishing"
+                                : `Connect ${recordHost(record)} to enable publishing`
                             }
                           >
                             {publishingToWordPress === record.id ? (
@@ -1727,14 +1963,13 @@ export default function Home() {
                             className="secondary-button compact wordpress-publish"
                             onClick={() => void createWordPressDraft(record)}
                             disabled={
-                              wordpress.loading ||
                               creatingWordPressBatch ||
                               publishingToWordPress === record.id
                             }
                             title={
-                              wordpress.connected
+                              wordPressConnectionFor(record)
                                 ? "Create this approved page as a WordPress draft"
-                                : wordpress.message || "Connect WordPress in Vercel to enable drafts"
+                                : `Connect ${recordHost(record)} to enable drafts`
                             }
                           >
                             {publishingToWordPress === record.id ? (
