@@ -36,6 +36,21 @@ function allowedPublisher(email: string | null) {
   return allowed.includes(email.toLowerCase());
 }
 
+function directLink(href?: string) {
+  if (!href) return href;
+  try {
+    const parsed = new URL(href.replace(/&amp;/gi, "&"));
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (hostname === "google.com" && parsed.pathname === "/url") {
+      const target = parsed.searchParams.get("q") || parsed.searchParams.get("url");
+      if (target && /^(https?:|mailto:|tel:)/i.test(target)) return target;
+    }
+  } catch {
+    // The sanitizer will handle relative or malformed values.
+  }
+  return href;
+}
+
 function cleanGoogleDocHtml(exportedHtml: string) {
   const body = exportedHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || exportedHtml;
   return sanitizeHtml(body, {
@@ -52,15 +67,19 @@ function cleanGoogleDocHtml(exportedHtml: string) {
     },
     allowedSchemes: ["http", "https", "mailto", "tel"],
     transformTags: {
-      a: (_tagName, attribs) => ({
-        tagName: "a",
-        attribs: {
-          ...attribs,
-          ...(attribs.href?.startsWith("http")
-            ? { target: "_blank", rel: "noopener noreferrer" }
-            : {}),
-        },
-      }),
+      a: (_tagName, attribs) => {
+        const href = directLink(attribs.href);
+        return {
+          tagName: "a",
+          attribs: {
+            ...attribs,
+            ...(href ? { href } : {}),
+            ...(href?.startsWith("http")
+              ? { target: "_blank", rel: "noopener noreferrer" }
+              : {}),
+          },
+        };
+      },
     },
   }).trim();
 }
