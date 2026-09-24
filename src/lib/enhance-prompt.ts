@@ -1,3 +1,6 @@
+import { LEGAL_DIRECTORY_LABEL_RULE } from "./geo-directory-labels";
+import { AMPLIFY_FAQ_PROMPT } from "@/lib/faq-standard";
+
 export const ENHANCE_PAGE_PROMPT = String.raw`
 Rewrite and substantially improve the complete main-body content of this law-firm geo page:
 
@@ -7,7 +10,7 @@ The page may concern any legal practice area, including construction accidents, 
 
 Determine the page's actual location and practice area from the live page. Do not assume that it concerns construction accidents.
 
-Whenever a city and state appear together in the rewritten page, use the city followed by the state's two-letter postal abbreviation with no comma. Example: Middletown PA. Apply this format in the H1, headings, body copy, and calls to action, even if the original page uses a full state name or a comma.
+Always pair the page's primary city with the state's two-letter postal abbreviation. A city-only label such as “Camden” must become “Camden NJ,” including in the H1/page title, SEO title, relevant headings, and calls to action. Whenever a city and state appear together in body copy, use the same no-comma format. Example: Middletown PA. Apply this rule even if the original page uses only the city, a full state name, or a comma.
 
 Execute the following workflow without asking questions.
 
@@ -102,10 +105,10 @@ The finished page should generally include:
 7. A short, practical explanation of the most important evidence
 8. Compensation or remedies that may be available
 9. A factual explanation of how a lawyer can investigate and handle this type of matter
-10. Three or four high-value FAQs tailored to the topic and jurisdiction
-11. A concise selection of government and authoritative medical guidance that helps the reader understand the situation or take an important next step
-12. The preserved geo-page link block, if one exists
-13. A final location- and topic-specific consultation section
+10. A concise selection of government and authoritative medical guidance that helps the reader understand the situation or take an important next step
+11. The preserved geo-page link block, if one exists
+12. A final location- and topic-specific consultation section
+13. The complete ten-question FAQ section required by the Global AMPLIFY FAQ Standard
 
 Adapt the headings and order to the subject. Do not use irrelevant sections merely to follow this list.
 
@@ -172,7 +175,9 @@ If the source page contains this section:
 
 * Preserve the heading exactly.
 * Preserve every existing destination URL.
-* Preserve the anchor text.
+${LEGAL_DIRECTORY_LABEL_RULE}
+
+* Rewrite each directory link's visible anchor text to contain only the city, municipality, neighborhood, or county name. Never repeat the practice area, state, state abbreviation, "lawyer," or "attorney" in these directory anchors. For example, use "Camden," not "Camden Truck Accidents."
 * Preserve the links in the same order.
 * Do not shorten or summarize the list.
 * Do not add a link to the page being rewritten.
@@ -236,6 +241,7 @@ Before returning the page, confirm internally that:
 
 * The practice area was identified correctly.
 * The municipality, county, and state are correct.
+* The primary city is never left as a city-only label in the H1/page title, SEO title, relevant headings, or calls to action; it includes the verified two-letter state abbreviation with no comma.
 * The content structure fits the actual legal topic.
 * No irrelevant construction, OSHA, workers' compensation, or medical information was forced into the page.
 * Every legal deadline that appears is supported by a current official source and is important enough to include.
@@ -255,9 +261,9 @@ Before returning the page, confirm internally that:
 
 ## Output
 
-Return only the finished, copy-paste-ready page in Markdown, beginning with the H1 and ending with the final consultation section.
+Return only the finished, copy-paste-ready page in Markdown, beginning with the H1 and ending with the complete FAQ section.
 
-Do not include research notes, an audit, a separate source list, editing commentary, or explanations outside the page.
+Do not include research notes, an audit, editing commentary, or explanations outside the page. The required per-answer FAQ source lines are part of the page, not an editorial source appendix.
 `;
 
 export function buildEnhancePagePrompt(input: { pageUrl: string; notes?: string }) {
@@ -265,5 +271,5 @@ export function buildEnhancePagePrompt(input: { pageUrl: string; notes?: string 
     ? `\n\nADDITIONAL INSTRUCTIONS FOR THIS PAGE\n${input.notes.trim()}`
     : "";
 
-  return `${ENHANCE_PAGE_PROMPT.replace("{{URL}}", input.pageUrl)}${notes}`;
+  return `${ENHANCE_PAGE_PROMPT.replace("{{URL}}", input.pageUrl)}${notes}\n\n${AMPLIFY_FAQ_PROMPT}`;
 }

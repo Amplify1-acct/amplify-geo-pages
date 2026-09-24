@@ -19,7 +19,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(preview);
   } catch (error) {
     const message = error instanceof Error ? error.message : "The page preview could not be prepared.";
-    const status = /not connected|reconnect|expired/i.test(message) ? 401 : 500;
+    const status = /not connected|reconnect|expired/i.test(message)
+      ? 401
+      : /AMPLIFY FAQ standard/i.test(message)
+        ? 422
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

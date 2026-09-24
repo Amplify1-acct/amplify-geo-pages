@@ -1,4 +1,4 @@
-const STATE_ABBREVIATIONS: Record<string, string> = {
+export const STATE_ABBREVIATIONS: Record<string, string> = {
   alabama: "AL",
   alaska: "AK",
   arizona: "AZ",
@@ -67,4 +67,96 @@ export function stateAbbreviation(state: string) {
 
 export function formatLocation(city: string, state: string) {
   return `${city.trim()} ${stateAbbreviation(state)}`.trim();
+}
+
+const STATE_NAME_BY_ABBREVIATION = Object.fromEntries(
+  Object.entries(STATE_ABBREVIATIONS).map(([name, abbreviation]) => [abbreviation, name]),
+) as Record<string, string>;
+
+function escapedPattern(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function visibleText(value: string) {
+  return value
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function countMatches(value: string, pattern: RegExp) {
+  return [...value.matchAll(pattern)].length;
+}
+
+export function inferStateAbbreviation(
+  value: string,
+  jurisdictions: string[] = [],
+  location = "",
+) {
+  const text = visibleText(value);
+  const locationPattern = location.trim() ? escapedPattern(location.trim()) : "";
+  const scores = Object.entries(STATE_NAME_BY_ABBREVIATION).map(([abbreviation, canonicalName]) => {
+    const names = Object.entries(STATE_ABBREVIATIONS)
+      .filter(([, candidate]) => candidate === abbreviation)
+      .map(([name]) => name)
+      .sort((a, b) => b.length - a.length);
+    const namePattern = names.map(escapedPattern).join("|");
+    const fullNameMatches = namePattern
+      ? countMatches(text, new RegExp(`\\b(?:${namePattern})\\b`, "gi"))
+      : 0;
+    const abbreviationMatches = countMatches(
+      text,
+      new RegExp(`(?:^|[^A-Za-z])${escapedPattern(abbreviation)}(?:$|[^A-Za-z])`, "g"),
+    );
+    const locationMatches = locationPattern
+      ? countMatches(
+          text,
+          new RegExp(
+            `\\b${locationPattern}\\s*,?\\s*(?:${escapedPattern(abbreviation)}|${namePattern})\\b`,
+            "gi",
+          ),
+        )
+      : 0;
+    return {
+      abbreviation,
+      canonicalName,
+      score: (locationMatches * 12) + (fullNameMatches * 4) + abbreviationMatches,
+    };
+  }).sort((a, b) => b.score - a.score);
+
+  if (scores[0]?.score >= 4 && scores[0].score > (scores[1]?.score || 0)) {
+    return scores[0].abbreviation;
+  }
+
+  const jurisdictionStates = new Set(
+    jurisdictions
+      .map((jurisdiction) => {
+        const normalized = jurisdiction
+          .replace(/\b(?:state|county|city)\b/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const abbreviation = stateAbbreviation(normalized);
+        return /^[A-Z]{2}$/.test(abbreviation) ? abbreviation : "";
+      })
+      .filter(Boolean),
+  );
+  return jurisdictionStates.size === 1 ? [...jurisdictionStates][0] : "";
+}
+
+export function stripStateSuffix(location: string) {
+  const stateNames = Object.keys(STATE_ABBREVIATIONS)
+    .sort((a, b) => b.length - a.length)
+    .map(escapedPattern)
+    .join("|");
+  const abbreviations = [...new Set(Object.values(STATE_ABBREVIATIONS))]
+    .map(escapedPattern)
+    .join("|");
+  return location
+    .replace(new RegExp(`(?:\\s*,\\s*|\\s+)(?:${stateNames}|${abbreviations})$`, "i"), "")
+    .replace(/\s+/g, " ")
+    .trim();
 }

@@ -1,0 +1,8 @@
+import {finalApprovalReady,type WorkflowRecord} from '@/lib/content-workflow';
+type Evidence=WorkflowRecord & {approvedAt?:string;wordpressDraftAt?:string;wordpressCheckedAt?:string;featuredMediaId?:number;featuredImageApproved?:boolean;draftWarnings?:string[]};
+export function WorkflowChecklist({record:r,authorityVerified}:{record:Evidence;authorityVerified?:boolean}){
+ const prepared=r.preparationRequired===false&&!r.wordpressIntakeOnly;
+ const steps: [string, boolean][]=[['Writing approved by Aron',r.aronDone===true],['WordPress draft saved',Boolean(r.wordpressPageId)],['Featured image approved',Boolean(r.featuredMediaId)&&r.featuredImageApproved===true],['Preparation checks completed',prepared],['Ready for final approval',finalApprovalReady(r)&&authorityVerified!==false],['Publication verified',r.wordpressStatus==='publish'] ];
+ if(authorityVerified!==undefined)steps.splice(4,0,['Saved draft authority verified',authorityVerified]);
+ return <details className="workflow-checklist"><summary>Progress and checks</summary><ul style={{listStyle:'none',padding:0,lineHeight:1.9}}>{steps.map(([label,done])=><li key={label}>{done?'✓':'○'} {label}{!done?' — pending':''}</li>)}</ul><p>Preparation includes layout, CTAs, SEO, links and FAQ checks. Pending steps are not treated as verified.</p>{r.approvedAt&&<p>Aron approved: {new Date(r.approvedAt).toLocaleString()}</p>}{r.wordpressDraftAt&&<p>Draft saved: {new Date(r.wordpressDraftAt).toLocaleString()}</p>}{r.wordpressCheckedAt&&<p>WordPress status checked: {new Date(r.wordpressCheckedAt).toLocaleString()}</p>}{r.draftWarnings?.map((w,i)=><p key={i}>{w}</p>)}</details>;
+}

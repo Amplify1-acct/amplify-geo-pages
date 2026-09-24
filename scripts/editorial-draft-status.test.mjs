@@ -1,0 +1,21 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const encode=source=>'data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
+const flowUrl=encode(fs.readFileSync(new URL('../src/lib/content-workflow.ts',import.meta.url),'utf8'));
+const statusSource=fs.readFileSync(new URL('../src/lib/editorial-draft-status.ts',import.meta.url),'utf8').replace('./content-workflow',flowUrl);
+const {editorialDraftStatus,editorialActionGroup,editorialStatusLabel}=await import(encode(statusSource));
+test('missing draft cannot stay drafting',()=>assert.equal(editorialDraftStatus({status:'drafting'}),'error'));
+test('failed writing overrides stale drafting',()=>assert.equal(editorialDraftStatus({status:'drafting'},{status:'error'}),'error'));
+test('saved document recovers stale calendar status',()=>assert.equal(editorialDraftStatus({status:'error'},{status:'review',docUrl:'https://docs.google.com/d/1'}),'review'));
+test('active writing remains drafting',()=>assert.equal(editorialDraftStatus({status:'drafting'},{status:'generating'}),'drafting'));
+test('WordPress publication takes precedence',()=>assert.equal(editorialDraftStatus({status:'error'},{status:'error',wordpressStatus:'publish'}),'published'));
+
+test('selected failed topic belongs to writing, never topic selection',()=>assert.equal(editorialActionGroup({status:'error',selectedTopic:'Selected question'}),'writing'));
+test('research failure without selected topic stays in topic choices',()=>assert.equal(editorialActionGroup({status:'error'}),'topic'));
+test('fresh running job is not reported as missing',()=>assert.equal(editorialDraftStatus({status:'drafting',generationState:'running',generationCheckedAt:new Date().toISOString()}),'drafting'));
+test('stale running job does not imply active work',()=>assert.equal(editorialDraftStatus({status:'drafting',generationState:'running',generationCheckedAt:'2020-01-01'}),'error'));
+test('verified WordPress schedule beats stale published tracker flag',()=>assert.equal(editorialDraftStatus({status:'published'},{status:'published',wordpressStatus:'future'}),'scheduled'));
+test('future assignment never hides actual publication',()=>assert.equal(editorialStatusLabel({status:'published',publishAt:'2099-01-01'},{wordpressStatus:'publish'}),'Published — before assigned date'));
+test('prepared draft is ready for final approval',()=>assert.equal(editorialStatusLabel({status:'wordpress_draft'},{wordpressStatus:'draft',preparationRequired:false,aronDone:true}),'Ready for your approval'));

@@ -1,84 +1,75 @@
+import { getClientProfile } from "@/lib/clients";
+import { getClientProfileAsync } from "@/lib/client-store";
+
 export type WordPressConfig = {
+  clientId: string;
+  clientName: string;
   siteUrl: string;
   username: string;
   applicationPassword: string;
+  pageTemplate?: string;
 };
 
-export type WordPressConnectionInput = Partial<WordPressConfig>;
-
-const PRIVATE_HOSTS = [
-  /^localhost$/i,
-  /\.local$/i,
-  /\.internal$/i,
-  /^0\./,
-  /^10\./,
-  /^127\./,
-  /^169\.254\./,
-  /^192\.168\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^::1$/,
-];
-
-export function wordpressConfigured() {
-  return Boolean(
-    process.env.WORDPRESS_SITE_URL &&
-      process.env.WORDPRESS_USERNAME &&
-      process.env.WORDPRESS_APPLICATION_PASSWORD,
-  );
+export function wordpressConfigured(clientId?: string, website?: string) {
+  return Boolean(getClientProfile(clientId, website)?.wordpress);
 }
 
-function normalizeWordPressConfig(input: WordPressConnectionInput): WordPressConfig {
-  const rawSiteUrl = input.siteUrl?.trim() || "";
-  const username = input.username?.trim() || "";
-  const applicationPassword = input.applicationPassword?.replace(/\s+/g, "") || "";
-
-  if (!rawSiteUrl || !username || !applicationPassword) {
+export function getWordPressConfig(clientId?: string, website?: string): WordPressConfig {
+  const client = getClientProfile(clientId, website);
+  if (!client?.wordpress) {
     throw new Error(
-      "Complete the WordPress site URL, username, and Application Password.",
+      "WordPress is not connected for this client yet. Add the client profile in Vercel first.",
     );
   }
 
-  const siteUrl = rawSiteUrl.replace(/\/$/, "");
+  const siteUrl = client.wordpress.siteUrl.trim().replace(/\/$/, "");
   const parsed = new URL(siteUrl);
   if (parsed.protocol !== "https:") {
     throw new Error("The connected WordPress website must use HTTPS.");
   }
 
-  if (PRIVATE_HOSTS.some((pattern) => pattern.test(parsed.hostname))) {
-    throw new Error("Local and private WordPress websites are not supported.");
-  }
-
-  parsed.username = "";
-  parsed.password = "";
-  parsed.hash = "";
-  parsed.search = "";
-  parsed.pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-
   return {
-    siteUrl: parsed.toString().replace(/\/$/, ""),
-    username,
-    applicationPassword,
+    clientId: client.id,
+    clientName: client.name,
+    siteUrl,
+    username: client.wordpress.username,
+    applicationPassword: client.wordpress.applicationPassword,
+    pageTemplate: client.wordpress.pageTemplate,
   };
 }
 
-export function getWordPressConfig(
-  connection?: WordPressConnectionInput,
-): WordPressConfig {
-  if (connection?.siteUrl || connection?.username || connection?.applicationPassword) {
-    return normalizeWordPressConfig(connection);
-  }
+export async function wordpressConfiguredAsync(
+  clientId?: string,
+  website?: string,
+  accessToken?: string,
+) {
+  return Boolean((await getClientProfileAsync(clientId, website, accessToken))?.wordpress);
+}
 
-  if (!wordpressConfigured()) {
+export async function getWordPressConfigAsync(
+  clientId?: string,
+  website?: string,
+  accessToken?: string,
+): Promise<WordPressConfig> {
+  const client = await getClientProfileAsync(clientId, website, accessToken);
+  if (!client?.wordpress) {
     throw new Error(
-      "WordPress is not connected yet. Enter the site’s WordPress connection first.",
+      "WordPress is not connected for this client yet. Add it in Client Connections first.",
     );
   }
-
-  return normalizeWordPressConfig({
-    siteUrl: process.env.WORDPRESS_SITE_URL,
-    username: process.env.WORDPRESS_USERNAME,
-    applicationPassword: process.env.WORDPRESS_APPLICATION_PASSWORD,
-  });
+  const siteUrl = client.wordpress.siteUrl.trim().replace(/\/$/, "");
+  const parsed = new URL(siteUrl);
+  if (parsed.protocol !== "https:") {
+    throw new Error("The connected WordPress website must use HTTPS.");
+  }
+  return {
+    clientId: client.id,
+    clientName: client.name,
+    siteUrl,
+    username: client.wordpress.username,
+    applicationPassword: client.wordpress.applicationPassword,
+    pageTemplate: client.wordpress.pageTemplate,
+  };
 }
 
 export function wordPressAuthorization(config: WordPressConfig) {
@@ -86,13 +77,4 @@ export function wordPressAuthorization(config: WordPressConfig) {
     `${config.username}:${config.applicationPassword}`,
     "utf8",
   ).toString("base64")}`;
-}
-
-export function wordPressRequestHeaders(config: WordPressConfig) {
-  return {
-    Authorization: wordPressAuthorization(config),
-    Accept: "application/json",
-    "User-Agent":
-      "AMPLIFYGeoPages/1.0 (+https://amplify-geo-pages.vercel.app)",
-  };
 }

@@ -4,18 +4,25 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "test": "npm run test:faq-standard && npm run test:car-accident-context",
+    "prebuild": "npm run test:faq-standard && node --experimental-strip-types --test scripts/legal-directory-labels.test.mjs scripts/wordpress-theme-title.test.mjs scripts/attorney-authority.test.mjs scripts/tracker-sync.test.mjs scripts/content-image-plan.test.mjs && npm run test:workflow && npm run test:car-accident-context",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:faq-standard": "node --experimental-strip-types scripts/faq-standard.test.mjs",
+    "test:workflow": "node --experimental-strip-types --test scripts/content-workflow.test.mjs scripts/editorial-draft-status.test.mjs",
+    "test:car-accident-context": "node --experimental-strip-types --test scripts/car-accident-context.test.mjs"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.3",
     "lucide-react": "latest",
     "marked": "latest",
     "next": "latest",
     "openai": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "sanitize-html": "latest"
+    "sanitize-html": "2.17.0",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@types/node": "latest",
@@ -24,6 +31,6 @@
     "@types/sanitize-html": "latest",
     "eslint": "latest",
     "eslint-config-next": "latest",
-    "typescript": "latest"
+    "typescript": "^5.9.3"
   }
 }

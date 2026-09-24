@@ -1,8 +1,16 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+// Server-only context for durable upload jobs; never populated from request headers.
+const jobGoogleToken = new AsyncLocalStorage<string>();
+export function withJobGoogleToken<T>(token: string, work: () => Promise<T>) {
+  return jobGoogleToken.run(token, work);
+}
 
 export const GOOGLE_REFRESH_COOKIE = "amplify_google_refresh";
 export const GOOGLE_STATE_COOKIE = "amplify_google_state";
+export const GOOGLE_RETURN_COOKIE = "amplify_google_return_to";
 
 export function googleConfigured() {
   return Boolean(
@@ -45,6 +53,8 @@ export function decryptToken(value: string) {
 }
 
 export async function getGoogleAccessToken() {
+  const jobToken = jobGoogleToken.getStore();
+  if (jobToken) return jobToken;
   if (!googleConfigured()) {
     throw new Error("Google OAuth is not configured.");
   }
@@ -52,6 +62,11 @@ export async function getGoogleAccessToken() {
   const cookieStore = await cookies();
   const encrypted = cookieStore.get(GOOGLE_REFRESH_COOKIE)?.value;
   if (!encrypted) throw new Error("Google Drive is not connected.");
+
+  return refreshGoogleAccessToken(encrypted);
+}
+
+export async function refreshGoogleAccessToken(encrypted: string) {
 
   let refreshToken: string;
   try {
@@ -70,6 +85,7 @@ export async function getGoogleAccessToken() {
       grant_type: "refresh_token",
     }),
     cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
   });
 
   const data = (await response.json()) as { access_token?: string; error_description?: string };

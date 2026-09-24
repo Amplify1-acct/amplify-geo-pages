@@ -1,4 +1,6 @@
+import { LEGAL_DIRECTORY_LABEL_RULE } from "./geo-directory-labels";
 import { formatLocation } from "@/lib/location";
+import { AMPLIFY_FAQ_PROMPT } from "@/lib/faq-standard";
 
 export const MASTER_PROMPT = String.raw`
 AMPLIFY Master Prompt
@@ -318,6 +320,18 @@ CALLS TO ACTION
 
 Calls to action should feel like practical advice.
 
+EARLY CITIES-SERVED SECTION
+
+After a short opening of one or two paragraphs, include an H2 section titled "Cities We Serve" or a more natural equivalent for the page. Place it before the long-form legal discussion.
+
+${LEGAL_DIRECTORY_LABEL_RULE}
+
+Under that heading, include a concise bulleted directory of the planned location pages for this campaign. Each bullet label must contain only the city/municipality name or county name, such as "Westfield" or "Westchester County." Never append the state, state abbreviation, practice area, "lawyer," "attorney," or any other repeated qualifier to a directory label. The heading and surrounding page already provide that context. Every location page in the campaign must ultimately use the same complete directory so the published pages can cross-link to one another consistently.
+
+Research the municipalities carefully. Do not invent service areas and do not list places outside the relevant market merely to make the list longer.
+
+Do not link city names in the Google Doc itself. The WordPress workflow verifies which destinations are already published, links those live GEO pages directly in the directory, and leaves unpublished locations as plain text so it never creates temporary 404s. When another page in the campaign goes live, the publishing workflow must update every live page in that campaign so the complete published set cross-links consistently.
+
 Good:
 
 "Tell us what happened."
@@ -350,6 +364,7 @@ Do not force identical headings from page to page.
 
 - H1
 - Introduction
+- Early Cities We Serve bulleted campaign directory using location-only labels, with no links until the full city-page set is published
 - Why choose the firm
 - Why these cases are different here
 - Local accident snapshot
@@ -363,9 +378,9 @@ Do not force identical headings from page to page.
 - Government claims
 - Local courts, hospitals, and agencies
 - How the firm investigates cases
-- FAQs
 - Related internal links
 - Final call to action
+- FAQs
 - Sources
 
 PRACTICE-AREA INTERNAL LINKS
@@ -483,5 +498,5 @@ export function buildPagePrompt(input: {
     ? `\nADDITIONAL INSTRUCTIONS FOR THIS PAGE\n${input.notes.trim()}\n`
     : "";
 
-  return `${MASTER_PROMPT}\n\nCURRENT ASSIGNMENT\nLaw Firm Website: ${input.website}\nPractice Area: ${input.practiceArea}\nTarget Location: ${formatLocation(input.city, input.state)}\n${notes}\nOUTPUT FORMAT\nReturn only the finished page in clean Markdown. Begin directly with the page headline and body copy. Do not include an SEO title, meta description, URL slug, last-reviewed date, attorney-review notice, attorney-advertising disclaimer, legal-advice disclaimer, attorney-client relationship disclaimer, or results disclaimer. Use descriptive Markdown links with full, verified URLs for every source, internal link, and factual citation. In every types-of-cases or practice-areas list, link each case type to the closest matching verified practice-area page on the firm's official website; leave it unlinked if no appropriate firm page exists. Always format a city and state together as City ST with the two-letter postal abbreviation and no comma, such as Middletown PA. Do not include research notes, commentary about your process, or a quality-check checklist. The final source list must include every source relied upon. Complete the editorial pass before returning the copy.`;
+  return `${MASTER_PROMPT}\n\nCURRENT ASSIGNMENT\nLaw Firm Website: ${input.website}\nPractice Area: ${input.practiceArea}\nTarget Location: ${formatLocation(input.city, input.state)}\n${notes}\n${AMPLIFY_FAQ_PROMPT}\nOUTPUT FORMAT\nReturn only the finished page in clean Markdown. Begin directly with the page headline and body copy. Do not include an SEO title, meta description, URL slug, last-reviewed date, attorney-review notice, attorney-advertising disclaimer, legal-advice disclaimer, attorney-client relationship disclaimer, or results disclaimer. Use descriptive Markdown links with full, verified URLs for every source, internal link, and factual citation. In every types-of-cases or practice-areas list, link each case type to the closest matching verified practice-area page on the firm's official website; leave it unlinked if no appropriate firm page exists. Always format a city and state together as City ST with the two-letter postal abbreviation and no comma, such as Middletown PA. Do not include research notes, commentary about your process, or a quality-check checklist. The final source list must include every source relied upon. Complete the editorial pass before returning the copy.`;
 }

@@ -3,14 +3,20 @@ import {
   appUrl,
   encryptToken,
   GOOGLE_REFRESH_COOKIE,
+  GOOGLE_RETURN_COOKIE,
   GOOGLE_STATE_COOKIE,
 } from "@/lib/google";
+
+function safeReturnTo(value: string | undefined) {
+  return value?.startsWith("/") && !value.startsWith("//") ? value : "/";
+}
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
   const expectedState = request.cookies.get(GOOGLE_STATE_COOKIE)?.value;
   const baseUrl = appUrl(request.url);
+  const returnTo = safeReturnTo(request.cookies.get(GOOGLE_RETURN_COOKIE)?.value);
 
   if (!code || !state || !expectedState || state !== expectedState) {
     return NextResponse.redirect(`${baseUrl}/?google=failed`);
@@ -38,7 +44,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/?google=failed`);
   }
 
-  const response = NextResponse.redirect(`${baseUrl}/?google=connected`);
+  const separator = returnTo.includes("?") ? "&" : "?";
+  const response = NextResponse.redirect(`${baseUrl}${returnTo}${separator}google=connected`);
   response.cookies.set(GOOGLE_REFRESH_COOKIE, encryptToken(tokenData.refresh_token), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -47,5 +54,6 @@ export async function GET(request: NextRequest) {
     path: "/",
   });
   response.cookies.delete(GOOGLE_STATE_COOKIE);
+  response.cookies.delete(GOOGLE_RETURN_COOKIE);
   return response;
 }

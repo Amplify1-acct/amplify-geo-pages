@@ -1,23 +1,14 @@
+import { mergeGoogleDocLinkRuns } from "@/lib/google-doc-links";
 import sanitizeHtml from "sanitize-html";
-
-function directLink(href?: string) {
-  if (!href) return href;
-  try {
-    const parsed = new URL(href.replace(/&amp;/gi, "&"));
-    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    if (hostname === "google.com" && parsed.pathname === "/url") {
-      const target = parsed.searchParams.get("q") || parsed.searchParams.get("url");
-      if (target && /^(https?:|mailto:|tel:)/i.test(target)) return target;
-    }
-  } catch {
-    // The sanitizer handles relative or malformed values.
-  }
-  return href;
-}
+import { directLink } from "@/lib/direct-link";
+import { getClientProfileAsync } from "@/lib/client-store";
+import {
+  assertAmplifyFaqHtml,
+} from "@/lib/faq-standard";
 
 function cleanGoogleDocHtml(exportedHtml: string) {
   const body = exportedHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || exportedHtml;
-  return sanitizeHtml(body, {
+  return mergeGoogleDocLinkRuns(sanitizeHtml(body, {
     allowedTags: [
       "h1", "h2", "h3", "h4", "h5", "h6", "p", "br", "strong", "b", "em", "i",
       "u", "s", "sup", "sub", "ul", "ol", "li", "blockquote", "a", "hr", "table",
@@ -45,7 +36,7 @@ function cleanGoogleDocHtml(exportedHtml: string) {
         };
       },
     },
-  }).trim();
+  }).trim());
 }
 
 function plainText(value: string) {
@@ -108,6 +99,10 @@ export async function prepareApprovedGoogleDoc(
   if (!exportedContent || plainText(exportedContent).length < 100) {
     throw new Error("The approved Google Doc does not contain enough usable page content.");
   }
+  const client = metadata.appProperties?.amplifyClientId
+    ? await getClientProfileAsync(metadata.appProperties.amplifyClientId, undefined, accessToken)
+    : undefined;
+  assertAmplifyFaqHtml(exportedContent, client?.website);
 
   const headingMatch = exportedContent.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
   const title = plainText(headingMatch?.[1] || "") || fallbackTitle.trim() || "New GEO page";
@@ -115,5 +110,9 @@ export async function prepareApprovedGoogleDoc(
     ? exportedContent
     : `<h1>${escapeHtml(title)}</h1>\n${exportedContent}`;
 
-  return { title, html };
+  return {
+    title,
+    html,
+    faqStandard: metadata.appProperties?.amplifyFaqStandard || null,
+  };
 }

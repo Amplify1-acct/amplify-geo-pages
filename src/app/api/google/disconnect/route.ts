@@ -6,3 +6,4 @@ export async function POST() {
   response.cookies.delete(GOOGLE_REFRESH_COOKIE);
   return response;
 }
+

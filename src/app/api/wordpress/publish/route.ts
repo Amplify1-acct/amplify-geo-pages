@@ -1,19 +1,20 @@
+import { mergeGoogleDocLinkRuns } from "@/lib/google-doc-links";
 import { NextRequest, NextResponse } from "next/server";
 import sanitizeHtml from "sanitize-html";
 import { getGoogleAccessToken, getGoogleEmail } from "@/lib/google";
 import {
-  getWordPressConfig,
-  wordPressRequestHeaders,
+  getWordPressConfigAsync,
+  wordPressAuthorization,
 } from "@/lib/wordpress";
-import type { WordPressConnectionInput } from "@/lib/wordpress";
+import { directLink } from "@/lib/direct-link";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 type PublishInput = {
+  clientId?: string;
   docId?: string;
   pageUrl?: string;
-  connection?: WordPressConnectionInput;
 };
 
 type WordPressPage = {
@@ -44,24 +45,9 @@ function allowedPublisher(email: string | null) {
   return allowed.includes(email.toLowerCase());
 }
 
-function directLink(href?: string) {
-  if (!href) return href;
-  try {
-    const parsed = new URL(href.replace(/&amp;/gi, "&"));
-    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    if (hostname === "google.com" && parsed.pathname === "/url") {
-      const target = parsed.searchParams.get("q") || parsed.searchParams.get("url");
-      if (target && /^(https?:|mailto:|tel:)/i.test(target)) return target;
-    }
-  } catch {
-    // The sanitizer will handle relative or malformed values.
-  }
-  return href;
-}
-
 function cleanGoogleDocHtml(exportedHtml: string) {
   const body = exportedHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || exportedHtml;
-  return sanitizeHtml(body, {
+  return mergeGoogleDocLinkRuns(sanitizeHtml(body, {
     allowedTags: [
       "h1",
       "h2",
@@ -115,7 +101,7 @@ function cleanGoogleDocHtml(exportedHtml: string) {
         };
       },
     },
-  }).trim();
+  }).trim());
 }
 
 async function exportApprovedGoogleDoc(accessToken: string, docId: string) {
@@ -213,6 +199,11 @@ async function backUpWordPressPage(
 }
 
 export async function POST(request: NextRequest) {
+  if (request.method === "POST") {
+    return NextResponse.json({
+      error: "This legacy direct-publish route is retired. Build the WordPress draft through AMPLIFY and use the verified go-live workflow.",
+    }, { status: 410 });
+  }
   try {
     const input = (await request.json()) as PublishInput;
     const docId = input.docId?.trim() || "";
@@ -240,7 +231,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const config = getWordPressConfig(input.connection);
+    const config = await getWordPressConfigAsync(input.clientId, pageUrl, accessToken);
     const configuredUrl = new URL(config.siteUrl);
     if (normalizedHost(sourceUrl.hostname) !== normalizedHost(configuredUrl.hostname)) {
       return NextResponse.json(
@@ -259,7 +250,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const requestHeaders = wordPressRequestHeaders(config);
+    const authorization = wordPressAuthorization(config);
     const query = new URLSearchParams({
       slug,
       context: "edit",
@@ -269,8 +260,7 @@ export async function POST(request: NextRequest) {
     const lookupResponse = await fetch(
       `${config.siteUrl}/wp-json/wp/v2/pages?${query}`,
       {
-        headers: requestHeaders,
-        redirect: "follow",
+        headers: { Authorization: authorization },
         cache: "no-store",
       },
     );
@@ -310,26 +300,14 @@ export async function POST(request: NextRequest) {
       {
         method: "POST",
         headers: {
-          ...requestHeaders,
+          Authorization: authorization,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ content: finalContent }),
-        redirect: "follow",
         cache: "no-store",
       },
     );
-    if (updateResponse.headers.get("cf-mitigated") === "challenge") {
-      throw new Error(
-        "Cloudflare challenged the WordPress REST API. Exempt /wp-json/ from the bot challenge before publishing.",
-      );
-    }
-    const updateText = await updateResponse.text();
-    let updated: WordPressPage & { message?: string };
-    try {
-      updated = JSON.parse(updateText) as WordPressPage & { message?: string };
-    } catch {
-      throw new Error("WordPress returned an unexpected response while updating the page.");
-    }
+    const updated = (await updateResponse.json()) as WordPressPage & { message?: string };
     if (!updateResponse.ok) {
       throw new Error(updated.message || "WordPress did not accept the approved page.");
     }

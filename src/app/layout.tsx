@@ -6,8 +6,8 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-display" });
 
 export const metadata: Metadata = {
-  title: "AMPLIFY Geo Pages",
-  description: "Research, draft, share, and track local authority practice pages.",
+  title: "AMPLIFY Content",
+  description: "Research, draft, approve, and publish legal GEO pages, page enhancements, and blog articles.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

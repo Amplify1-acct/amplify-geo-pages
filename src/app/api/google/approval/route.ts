@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
           reviewerEmails: ["aron@amplifylaw.ai"],
           lockFile: false,
           message:
-            "Please edit this geo page, then approve it when it is ready for Will and Abigail.",
+            "Please edit this geo page, then approve it when it is ready for the final page preview.",
           fileContentChangeBehavior: "RESET_APPROVAL",
         }),
       },

@@ -1,0 +1,6 @@
+// Read-only verification of CTA destinations, media, and excluded rollback pages.
+const paths=['/lesiones-catastroficas/','/wrongful-death/','/construction-accidents/','/motor-vehicle-accidents/','/catastrophic-injury/','/wp-content/uploads/2026/09/white-plains-ny-transportation-bus.jpg','/wp-content/uploads/2026/09/new-york-labor-law-scaffold.jpg','/wp-content/uploads/2026/02/Car-Accident-Lawyer-1-scaled.jpeg','/wp-content/uploads/2026/02/Wrongful-Death-1-scaled.jpeg'];
+const out=[];
+for(const path of paths){const r=await fetch('https://www.billycooperlaw.com'+path,{method:'HEAD',signal:AbortSignal.timeout(30000)});if(!r.ok)throw Error(`${path}: ${r.status}`);out.push({url:r.url,status:r.status});}
+for(const path of ['/','/blog/','/es/bronx-ny-abogado-lesiones-personales/']){const r=await fetch('https://www.billycooperlaw.com'+path,{signal:AbortSignal.timeout(30000)});const html=await r.text();const cards=(html.match(/class="[^"]*\bbilly-card-v4-html-r2\b[^"]*"/g)||[]).length;if(!r.ok||cards!==0)throw Error(`Excluded ${path}: ${r.status}, ${cards} cards`);out.push({excludedUrl:r.url,status:r.status,cards});}
+console.log(JSON.stringify({verifiedAt:new Date().toISOString(),allPassed:true,results:out}));

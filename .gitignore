@@ -7,3 +7,14 @@ outputs/
 work/
 *.tsbuildinfo
 .DS_Store
+
+.ai-control/
+
+# Local production records and generated review artifacts
+.artifacts/
+backups/
+generated/
+ops/
+
+# Keep the empty configuration template available
+!.env.example
